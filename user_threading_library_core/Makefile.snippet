@@ -1,0 +1,139 @@
+# Makefile snippet for integrating user threading library with xv6
+# Add this to your xv6 Makefile
+
+# ========================================
+# User Threading Library
+# ========================================
+
+# Define threading library object files
+UTHREAD_LIB = uthreads.o uthreads_swtch.o
+
+# Existing user library (already in xv6)
+ULIB = ulib.o usys.o printf.o umalloc.o
+
+# ========================================
+# Build Rules
+# ========================================
+
+# Rule for regular (non-threaded) programs
+_%: %.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+# Rule for threaded programs (prefix with t_)
+# Example: t_mutex_test.c will be linked with threading library
+_t_%: t_%.o $(ULIB) $(UTHREAD_LIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > t_$*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > t_$*.sym
+
+# Build threading library object files
+uthreads.o: user_threading_library_core/src/uthreads.c user_threading_library_core/src/uthreads.h
+	$(CC) $(CFLAGS) -c user_threading_library_core/src/uthreads.c
+
+uthreads_swtch.o: user_threading_library_core/src/uthreads_swtch.S
+	$(CC) $(ASFLAGS) -c user_threading_library_core/src/uthreads_swtch.S
+
+# ========================================
+# User Programs
+# ========================================
+
+# Add threaded programs to UPROGS
+# Note: Source files should be named t_*.c (e.g., t_mutex_test.c)
+UPROGS=\
+	_cat\
+	_echo\
+	_forktest\
+	_grep\
+	_init\
+	_kill\
+	_ln\
+	_ls\
+	_mkdir\
+	_rm\
+	_sh\
+	_stressfs\
+	_usertests\
+	_wc\
+	_zombie\
+	_t_basic_thread_test\
+	_t_mutex_test\
+	_t_producer_consumer_sem\
+	_t_producer_consumer_chan\
+	_t_reader_writer
+
+# ========================================
+# Alternative: Macro-based approach
+# ========================================
+# If you prefer to keep original names (without t_ prefix),
+# you can use a macro to define threaded programs:
+
+# Define threaded program macro
+# Usage: $(eval $(call THREADED_PROG,mutex_test))
+define THREADED_PROG
+_$(1): $(1).o $(ULIB) $(UTHREAD_LIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $$@ $$^
+	$(OBJDUMP) -S $$@ > $(1).asm
+	$(OBJDUMP) -t $$@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(1).sym
+endef
+
+# Then list your threaded programs:
+# $(eval $(call THREADED_PROG,mutex_test))
+# $(eval $(call THREADED_PROG,producer_consumer_sem))
+# $(eval $(call THREADED_PROG,reader_writer))
+
+# ========================================
+# Filesystem Image
+# ========================================
+
+# Make sure fs.img includes threaded programs
+fs.img: mkfs README $(UPROGS)
+	./mkfs fs.img README $(UPROGS)
+
+# ========================================
+# Compiler Flags
+# ========================================
+
+# If you need to adjust flags for threading library:
+# CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
+# ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+
+# ========================================
+# Clean
+# ========================================
+
+# Add threading library objects to clean target
+clean:
+	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
+	*.o *.d *.asm *.sym vectors.S bootblock entryother \
+	initcode initcode.out kernel xv6.img fs.img kernelmemfs \
+	xv6memfs.img mkfs .gdbinit \
+	$(UPROGS) \
+	uthreads.o uthreads_swtch.o
+
+# ========================================
+# Usage Instructions
+# ========================================
+
+# 1. Copy your threading library source files to xv6 directory:
+#    cp user_threading_library_core/src/uthreads.c xv6-public/
+#    cp user_threading_library_core/src/uthreads.h xv6-public/
+#    cp user_threading_library_core/src/uthreads_swtch.S xv6-public/
+
+# 2. Copy test and example files:
+#    cp user_threading_library_core/tests/t_*.c xv6-public/
+#    cp user_threading_library_core/examples/t_*.c xv6-public/
+
+# 3. Update Makefile with the rules above
+
+# 4. Build xv6:
+#    make
+
+# 5. Run in qemu:
+#    make qemu
+
+# 6. In xv6 shell, run threaded programs:
+#    $ t_mutex_test
+#    $ t_basic_thread_test
+#    $ t_producer_consumer_sem
